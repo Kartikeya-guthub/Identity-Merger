@@ -105,7 +105,7 @@ function buildResponse(contacts, primary) {
   const phones = [...new Set([primaryPhone, ...otherPhones].filter(Boolean))];
 
   const secondaryIds = contacts
-    .filter((c) => c.link_precedence === "secondary")
+    .filter((c) => c.link_precedence === "secondary" && c.id !== primary.id)
     .map((c) => c.id);
 
   return {
