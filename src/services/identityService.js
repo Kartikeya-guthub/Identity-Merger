@@ -38,6 +38,19 @@ function findPrimary(contacts) {
   return primary;
 }
 
+async function mergePrimaries(client, contacts, primaryId) {
+  for (const c of contacts) {
+    if (c.link_precedence === "primary" && c.id !== primaryId) {
+      await client.query(
+        `UPDATE contacts
+         SET link_precedence='secondary', linked_id=$1, updated_at=now()
+         WHERE id=$2`,
+        [primaryId, c.id]
+      );
+    }
+  }
+}
+
 async function identify(body) {
   const email = normalizeEmail(body.email);
   const phone = normalizePhone(body.phoneNumber);
@@ -45,7 +58,12 @@ async function identify(body) {
   const client = await pool.connect();
   try {
     const group = await getFullGroup(client, email, phone);
-    return { group };
+    if (group.length === 0) return { group: [] };
+
+    const primary = findPrimary(group);
+    await mergePrimaries(client, group, primary.id);
+
+    return { group, primaryId: primary.id };
   } finally {
     client.release();
   }
