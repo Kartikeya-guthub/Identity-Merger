@@ -3,7 +3,8 @@ function normalizeEmail(email) {
 }
 
 function normalizePhone(phone) {
-  return phone ? phone.trim() : null;
+  if (!phone) return null;
+  return phone.replace(/\D/g, "");
 }
 
 module.exports = { normalizeEmail, normalizePhone };
