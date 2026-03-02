@@ -51,18 +51,48 @@ async function mergePrimaries(client, contacts, primaryId) {
   }
 }
 
+function hasNewInfo(contacts, email, phone) {
+  const emails = contacts.map((c) => c.email);
+  const phones = contacts.map((c) => c.phone_number);
+
+  return (
+    (email && !emails.includes(email)) ||
+    (phone && !phones.includes(phone))
+  );
+}
+
 async function identify(body) {
   const email = normalizeEmail(body.email);
   const phone = normalizePhone(body.phoneNumber);
 
   const client = await pool.connect();
   try {
-    const group = await getFullGroup(client, email, phone);
-    if (group.length === 0) return { group: [] };
+    let group = await getFullGroup(client, email, phone);
+
+    if (group.length === 0) {
+      // Brand new contact — insert as primary
+      await client.query(
+        `INSERT INTO contacts (email, phone_number, link_precedence)
+         VALUES ($1, $2, 'primary')`,
+        [email, phone]
+      );
+      group = await getFullGroup(client, email, phone);
+      const primary = findPrimary(group);
+      return { group, primaryId: primary.id };
+    }
 
     const primary = findPrimary(group);
     await mergePrimaries(client, group, primary.id);
 
+    if (hasNewInfo(group, email, phone)) {
+      await client.query(
+        `INSERT INTO contacts (email, phone_number, linked_id, link_precedence)
+         VALUES ($1, $2, $3, 'secondary')`,
+        [email, phone, primary.id]
+      );
+    }
+
+    group = await getFullGroup(client, email, phone);
     return { group, primaryId: primary.id };
   } finally {
     client.release();
