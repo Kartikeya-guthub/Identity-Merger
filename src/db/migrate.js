@@ -1,4 +1,4 @@
-const pool = require("./db/connection");
+const pool = require("./connection");
 
 async function migrate() {
   await pool.query(`
