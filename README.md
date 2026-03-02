@@ -1,5 +1,15 @@
 # Identity Merger — Bitespeed Identity Reconciliation
 
+## 🌐 Hosted Endpoint
+**Base URL:** `https://identity-merger.onrender.com`
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/identify` | `POST` | Identity reconciliation |
+| `/health` | `GET` | Health check |
+
+---
+
 ## Problem Understanding
 
 When customers interact with a service using different email addresses or phone numbers, they can end up with multiple contact entries. This service **links all contact records belonging to the same person** into a unified identity, choosing the oldest record as the **primary** contact and marking others as **secondary**.
