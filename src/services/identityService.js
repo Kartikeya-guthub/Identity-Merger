@@ -95,25 +95,29 @@ async function identify(body) {
   const phone = normalizePhone(body.phoneNumber);
 
   const client = await pool.connect();
-  try {
-    let group = await getFullGroup(client, email, phone);
 
-    if (group.length === 0) {
-      // Brand new contact — insert as primary
-      await client.query(
+  try {
+    await client.query("BEGIN");
+
+    let contacts = await getFullGroup(client, email, phone);
+
+    if (contacts.length === 0) {
+      const res = await client.query(
         `INSERT INTO contacts (email, phone_number, link_precedence)
-         VALUES ($1, $2, 'primary')`,
+         VALUES ($1, $2, 'primary')
+         RETURNING *`,
         [email, phone]
       );
-      group = await getFullGroup(client, email, phone);
-      const primary = findPrimary(group);
-      return buildResponse(group, primary);
+
+      await client.query("COMMIT");
+      return buildResponse([res.rows[0]], res.rows[0]);
     }
 
-    const primary = findPrimary(group);
-    await mergePrimaries(client, group, primary.id);
+    const primary = findPrimary(contacts);
 
-    if (hasNewInfo(group, email, phone)) {
+    await mergePrimaries(client, contacts, primary.id);
+
+    if (hasNewInfo(contacts, email, phone)) {
       await client.query(
         `INSERT INTO contacts (email, phone_number, linked_id, link_precedence)
          VALUES ($1, $2, $3, 'secondary')`,
@@ -121,8 +125,14 @@ async function identify(body) {
       );
     }
 
-    group = await getFullGroup(client, email, phone);
-    return buildResponse(group, primary);
+    contacts = await getFullGroup(client, email, phone);
+
+    await client.query("COMMIT");
+
+    return buildResponse(contacts, primary);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
   } finally {
     client.release();
   }
