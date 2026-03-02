@@ -2,11 +2,25 @@ const pool = require("../db/connection");
 const { normalizeEmail, normalizePhone } = require("../utils/normalize");
 
 async function getFullGroup(client, email, phone) {
+  const conditions = [];
+  const params = [];
+
+  if (email) {
+    params.push(email);
+    conditions.push(`email = $${params.length}`);
+  }
+  if (phone) {
+    params.push(phone);
+    conditions.push(`phone_number = $${params.length}`);
+  }
+
+  if (conditions.length === 0) return [];
+
   const initial = await client.query(
     `SELECT * FROM contacts
-     WHERE (email = $1 OR phone_number = $2)
+     WHERE (${conditions.join(" OR ")})
      AND deleted_at IS NULL`,
-    [email, phone]
+    params
   );
 
   if (initial.rows.length === 0) return [];
@@ -16,11 +30,25 @@ async function getFullGroup(client, email, phone) {
   const emails = contacts.map((c) => c.email).filter(Boolean);
   const phones = contacts.map((c) => c.phone_number).filter(Boolean);
 
+  if (emails.length === 0 && phones.length === 0) return contacts;
+
+  const expandConditions = [];
+  const expandParams = [];
+
+  if (emails.length > 0) {
+    expandParams.push(emails);
+    expandConditions.push(`email = ANY($${expandParams.length})`);
+  }
+  if (phones.length > 0) {
+    expandParams.push(phones);
+    expandConditions.push(`phone_number = ANY($${expandParams.length})`);
+  }
+
   const expanded = await client.query(
     `SELECT * FROM contacts
-     WHERE (email = ANY($1) OR phone_number = ANY($2))
+     WHERE (${expandConditions.join(" OR ")})
      AND deleted_at IS NULL`,
-    [emails, phones]
+    expandParams
   );
 
   return expanded.rows;
@@ -90,14 +118,32 @@ function buildResponse(contacts, primary) {
   };
 }
 
+function hashKey(email, phone) {
+  const str = (email || "") + ":" + (phone || "");
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
 async function identify(body) {
   const email = normalizeEmail(body.email);
   const phone = normalizePhone(body.phoneNumber);
+
+  if (!email && !phone) {
+    return { error: "At least one of email or phoneNumber is required" };
+  }
 
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
+
+    // Advisory lock to prevent race conditions on concurrent requests
+    await client.query("SELECT pg_advisory_xact_lock($1)", [
+      hashKey(email, phone),
+    ]);
 
     let contacts = await getFullGroup(client, email, phone);
 
