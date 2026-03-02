@@ -26,6 +26,18 @@ async function getFullGroup(client, email, phone) {
   return expanded.rows;
 }
 
+function findPrimary(contacts) {
+  let primary = contacts[0];
+
+  for (const c of contacts) {
+    if (new Date(c.created_at) < new Date(primary.created_at)) {
+      primary = c;
+    }
+  }
+
+  return primary;
+}
+
 async function identify(body) {
   const email = normalizeEmail(body.email);
   const phone = normalizePhone(body.phoneNumber);
