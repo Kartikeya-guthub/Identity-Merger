@@ -25,33 +25,53 @@ async function getFullGroup(client, email, phone) {
 
   if (initial.rows.length === 0) return [];
 
+  // Iterative expansion until group stabilizes
+  let seenIds = new Set();
   let contacts = initial.rows;
 
-  const emails = contacts.map((c) => c.email).filter(Boolean);
-  const phones = contacts.map((c) => c.phone_number).filter(Boolean);
+  while (true) {
+    const newIds = contacts.map((c) => c.id).filter((id) => !seenIds.has(id));
+    if (newIds.length === 0) break;
+    newIds.forEach((id) => seenIds.add(id));
 
-  if (emails.length === 0 && phones.length === 0) return contacts;
+    const emails = contacts.map((c) => c.email).filter(Boolean);
+    const phones = contacts.map((c) => c.phone_number).filter(Boolean);
 
-  const expandConditions = [];
-  const expandParams = [];
+    if (emails.length === 0 && phones.length === 0) break;
 
-  if (emails.length > 0) {
-    expandParams.push(emails);
-    expandConditions.push(`email = ANY($${expandParams.length})`);
+    const expandParams = [];
+    const expandConditions = [];
+
+    if (emails.length > 0) {
+      expandParams.push(emails);
+      expandConditions.push(`email = ANY($${expandParams.length})`);
+    }
+    if (phones.length > 0) {
+      expandParams.push(phones);
+      expandConditions.push(`phone_number = ANY($${expandParams.length})`);
+    }
+
+    const expanded = await client.query(
+      `SELECT * FROM contacts
+       WHERE (${expandConditions.join(" OR ")})
+       AND deleted_at IS NULL`,
+      expandParams
+    );
+
+    const prevCount = contacts.length;
+    const allIds = new Set(contacts.map((c) => c.id));
+    for (const row of expanded.rows) {
+      if (!allIds.has(row.id)) {
+        contacts.push(row);
+        allIds.add(row.id);
+      }
+    }
+
+    // If no new rows were added, group is stable
+    if (contacts.length === prevCount) break;
   }
-  if (phones.length > 0) {
-    expandParams.push(phones);
-    expandConditions.push(`phone_number = ANY($${expandParams.length})`);
-  }
 
-  const expanded = await client.query(
-    `SELECT * FROM contacts
-     WHERE (${expandConditions.join(" OR ")})
-     AND deleted_at IS NULL`,
-    expandParams
-  );
-
-  return expanded.rows;
+  return contacts;
 }
 
 function findPrimary(contacts) {
