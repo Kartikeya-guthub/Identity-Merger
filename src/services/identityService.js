@@ -61,6 +61,35 @@ function hasNewInfo(contacts, email, phone) {
   );
 }
 
+function buildResponse(contacts, primary) {
+  // Ensure primary email/phone comes first
+  const primaryEmail = primary.email;
+  const primaryPhone = primary.phone_number;
+
+  const otherEmails = contacts
+    .map((c) => c.email)
+    .filter((e) => e && e !== primaryEmail);
+  const otherPhones = contacts
+    .map((c) => c.phone_number)
+    .filter((p) => p && p !== primaryPhone);
+
+  const emails = [...new Set([primaryEmail, ...otherEmails].filter(Boolean))];
+  const phones = [...new Set([primaryPhone, ...otherPhones].filter(Boolean))];
+
+  const secondaryIds = contacts
+    .filter((c) => c.link_precedence === "secondary")
+    .map((c) => c.id);
+
+  return {
+    contact: {
+      primaryContactId: primary.id,
+      emails,
+      phoneNumbers: phones,
+      secondaryContactIds: secondaryIds,
+    },
+  };
+}
+
 async function identify(body) {
   const email = normalizeEmail(body.email);
   const phone = normalizePhone(body.phoneNumber);
@@ -78,7 +107,7 @@ async function identify(body) {
       );
       group = await getFullGroup(client, email, phone);
       const primary = findPrimary(group);
-      return { group, primaryId: primary.id };
+      return buildResponse(group, primary);
     }
 
     const primary = findPrimary(group);
@@ -93,7 +122,7 @@ async function identify(body) {
     }
 
     group = await getFullGroup(client, email, phone);
-    return { group, primaryId: primary.id };
+    return buildResponse(group, primary);
   } finally {
     client.release();
   }
